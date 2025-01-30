@@ -14,8 +14,8 @@ contract Token is ERC20Upgradeable, OwnableUpgradeable {
     ) public initializer {
         __ERC20_init(name, symbol);
         uri = _uri;
-        // __Ownable_init(msg.sender);
-        __Ownable_init(_owner);
+        __Ownable_init();
+        transferOwnership(_owner);
     }
 
     function contractURI() public view returns (string memory) {

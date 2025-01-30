@@ -2,23 +2,23 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/proxy/Clones.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-
 import {LiquidityManager} from "./LiquidityManager.sol";
 import {BancorBondingCurve} from "./BancorBondingCurve.sol";
 import {Token} from "./Token.sol";
 
-contract TokenFactory is ReentrancyGuard, LiquidityManager {
-    uint256 public VERSION = 20241221;
+contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, LiquidityManager {
+    uint256 public VERSION;
     uint256 public constant FEE_DENOMINATOR = 10000;
     mapping(uint256 => address[]) public tokensByCompetitionId;
 
     mapping(address => uint256) public competitionIds;
-    uint256 public currentCompetitionId = 1;
+    uint256 public currentCompetitionId;
 
-    address public immutable tokenImplementation;
+    address public tokenImplementation;
     BancorBondingCurve public bondingCurve;
     uint256 public feePercent; // bp
     uint256 public feeAccumulated;
@@ -33,17 +33,11 @@ contract TokenFactory is ReentrancyGuard, LiquidityManager {
 
     // Events
     event TokenCreated(address indexed token, string name, string symbol, string uri, address creator, uint256 competitionId, uint256 timestamp);
-
     event NewCompetitionStarted(uint256 competitionId, uint256 timestamp);
-
     event TokenBuy(address indexed token, uint256 amount0In, uint256 amount0Out, uint256 fee, uint256 timestamp);
-
     event TokenMinted(address indexed token, uint256 assetAmount, uint256 tokenAmount, uint256 timestamp);
-
     event TokenSell(address indexed token, uint256 amount0In, uint256 amount0Out, uint256 fee, uint256 timestamp);
-
     event SetWinner(address indexed winner, uint256 competitionId, uint256 timestamp);
-
     event BurnTokenAndMintWinner(
         address indexed sender,
         address indexed token,
@@ -53,7 +47,6 @@ contract TokenFactory is ReentrancyGuard, LiquidityManager {
         uint256 fee,
         uint256 timestamp
     );
-
     event WinnerLiquidityAdded(
         address indexed tokenAddress,
         address indexed tokenCreator,
@@ -66,18 +59,27 @@ contract TokenFactory is ReentrancyGuard, LiquidityManager {
         uint256 timestamp
     );
 
-    constructor(
+    function initialize(
         address _tokenImplementation,
         address _uniswapV3Factory,
         address _nonfungiblePositionManager,
         address _bondingCurve,
         address _weth,
         uint256 _feePercent
-    ) LiquidityManager(_uniswapV3Factory, _nonfungiblePositionManager, _weth) {
+    ) public initializer {
+        __Ownable_init();
+        __ReentrancyGuard_init();
+        __LiquidityManager_init(_uniswapV3Factory, _nonfungiblePositionManager, _weth);
+
+        VERSION = 20241221;
         tokenImplementation = _tokenImplementation;
         bondingCurve = BancorBondingCurve(_bondingCurve);
         feePercent = _feePercent;
+        currentCompetitionId = 1;
     }
+
+    /// @dev Required by UUPSUpgradeable to authorize upgrades
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     modifier inCompetition(address tokenAddress) {
         require(competitionIds[tokenAddress] == currentCompetitionId, "The competition for this token has already ended");
@@ -88,7 +90,6 @@ contract TokenFactory is ReentrancyGuard, LiquidityManager {
 
     function startNewCompetition() external onlyOwner {
         currentCompetitionId = currentCompetitionId + 1;
-
         emit NewCompetitionStarted(currentCompetitionId, block.timestamp);
     }
 
@@ -108,7 +109,6 @@ contract TokenFactory is ReentrancyGuard, LiquidityManager {
         token.initialize(name, symbol, uri, address(this));
 
         tokensByCompetitionId[currentCompetitionId].push(tokenAddress);
-
         competitionIds[tokenAddress] = currentCompetitionId;
         tokensCreators[tokenAddress] = msg.sender;
 

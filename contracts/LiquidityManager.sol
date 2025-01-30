@@ -11,6 +11,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import {UD60x18, ud} from "@prb/math/src/UD60x18.sol";
 import {mulDiv} from "@prb/math/src/Common.sol";
 import {Token} from "./Token.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
 
 interface IWETH is IERC20 {
     function deposit() external payable;
@@ -22,7 +24,7 @@ interface IERC721Receiver {
     function onERC721Received(address operator, address from, uint256 tokenId, bytes calldata data) external returns (bytes4);
 }
 
-abstract contract LiquidityManager is IERC721Receiver, Ownable {
+abstract contract LiquidityManager is IERC721Receiver, Initializable, ContextUpgradeable {
     uint24 public constant UNISWAP_FEE = 3000;
     int24 private constant MIN_TICK = -887272;
     int24 private constant MAX_TICK = -MIN_TICK;
@@ -30,14 +32,14 @@ abstract contract LiquidityManager is IERC721Receiver, Ownable {
     uint16 private constant MIN_OBSERVATION_CARDINALITY = 60;
     uint32 private constant TWAP_DURATION = 120;
 
-    IWETH internal immutable WETH;
+    IWETH public WETH;
     INonfungiblePositionManager public nonfungiblePositionManager;
     IUniswapV3Factory public uniswapV3Factory;
 
     error PoolNonExist();
     error PoolTooNew();
 
-    constructor(address _uniswapV3Factory, address _nonfungiblePositionManager, address _weth) Ownable(msg.sender) {
+    function __LiquidityManager_init(address _uniswapV3Factory, address _nonfungiblePositionManager, address _weth) internal onlyInitializing {
         uniswapV3Factory = IUniswapV3Factory(_uniswapV3Factory);
         nonfungiblePositionManager = INonfungiblePositionManager(_nonfungiblePositionManager);
         WETH = IWETH(_weth);
