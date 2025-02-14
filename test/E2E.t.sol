@@ -18,6 +18,7 @@ contract E2ETest is Test {
     Token internal ta;
     Token internal tb;
     Token internal tc;
+    Token internal tw;
 
     address Owner = address(0x1234);
     address Alice = address(0x1235);
@@ -31,8 +32,8 @@ contract E2ETest is Test {
         address indexed token,
         address indexed winnerToken,
         uint256 burnedAmount,
-        uint256 receivedETH,
         uint256 mintedAmount,
+        uint256 fee,
         uint256 timestamp
     );
 
@@ -49,18 +50,23 @@ contract E2ETest is Test {
         tf = new TokenFactory(address(tref), UNISWAP_V3_FACTORY, UNISWAP_V3_NPM, address(bc), WETH, FEE_PERCENT);
         vm.stopPrank();
 
+        tw = Token(WETH);
+
         vm.startPrank(Alice);
         ta = tf.createToken("a", "A", "https://a.local");
+        console.log("ta address", address(ta));
         tf.buy{value: 1 ether}(address(ta));
         vm.stopPrank();
 
         vm.startPrank(Bob);
         tb = tf.createToken("b", "B", "https://b.local");
+        console.log("tb address", address(tb));
         tf.buy{value: 1 ether}(address(tb));
         vm.stopPrank();
 
         vm.startPrank(Charlie);
         tc = tf.createToken("c", "C", "https://c.local");
+        console.log("tc address", address(tc));
         tf.buy{value: 1 ether}(address(tc));
         vm.stopPrank();
     }
@@ -100,6 +106,8 @@ contract E2ETest is Test {
         tf.buy{value: 0.1 ether}(address(tc));
         vm.stopPrank();
 
+        console.log("Testing burnTokenAndMintWinner failures for burning non-winner");
+
         vm.startPrank(Dave);
         vm.expectRevert("Token address is winner");
         tf.burnTokenAndMintWinner(address(ta));
@@ -107,52 +115,68 @@ contract E2ETest is Test {
         taBalanceBefore = ta.balanceOf(address(Dave));
 
         uint256 burnedAmount = tb.balanceOf(address(Dave));
-        uint256 receivedETH = tf._sellReceivedAmount(address(tb), burnedAmount);
-        uint256 mintedAmount = tf._buyReceivedAmount(address(ta), receivedETH);
+        (uint256 netUserCollateral, uint256 fee) = tf._sellReceivedAmount(address(tb), burnedAmount);
 
-        vm.expectEmit(true, true, true, true, address(tf));
-        emit BurnTokenAndMintWinner(
-            address(Dave), // sender
-            address(tb), // token
-            address(ta), // winnerToken
-            burnedAmount,
-            receivedETH,
-            mintedAmount,
-            block.timestamp
-        );
+        console.log("Testing burnTokenAndMintWinner failures for burning when winner is not yet published");
+        console.log(tf.liquidityPositionTokenIds(address(ta)));
+        console.log(tf.liquidityPositionTokenIds(address(tb)));
+        vm.expectRevert("Winner is not yet published");
         tf.burnTokenAndMintWinner(address(tb));
-
-        taBalanceAfter = ta.balanceOf(address(Dave));
-        assertEq(mintedAmount, taBalanceAfter - taBalanceBefore, "taBalance incorrect");
         vm.stopPrank();
 
+        console.log("Testing failures for publishing non-winners");
         vm.startPrank(Server);
-        vm.expectRevert('Token address not winner');
+        vm.expectRevert("Token address not winner");
         tf.publishToUniswap(address(tb));
 
-        vm.expectRevert('Token address not winner');
+        vm.expectRevert("Token address not winner");
         tf.publishToUniswap(address(tc));
 
         address tokenPool = tf.tokensPools(address(ta));
-        assertEq(tokenPool, address(0x0), 'Token pool address not 0x0');
+        assertEq(tokenPool, address(0x0), "Token pool address should be 0x0");
 
-        // calculate liquidity
-        uint256 currentCollateral = tf.collateralById(currentCompetitionId - 1, address(ta));
-        uint256 totalCollateralFromAllTokens = tf.getCollateralByCompetitionId(currentCompetitionId - 1);
-        uint256 numTokensPerEther = bc.computeMintingAmountFromPrice(currentCollateral, ta.totalSupply(), 1 ether);
-        uint256 mintAmount = (totalCollateralFromAllTokens * numTokensPerEther) / 1e18;
-        console.log("mintAmount", mintAmount);
+        // Liquidity computation based on previous method (all collateral from the competition is immediately used for liquidity
+        // Not used for now
+        //        uint256 currentCollateral = tf.collateralById(currentCompetitionId - 1, address(ta));
+        //        uint256 totalCollateralFromAllTokens = tf.getCollateralByCompetitionId(currentCompetitionId - 1);
+        //        uint256 numTokensPerEther = bc.computeMintingAmountFromPrice(currentCollateral, ta.totalSupply(), 1 ether);
+        //        uint256 totalMintAmount = (totalCollateralFromAllTokens * numTokensPerEther) / 1e18;
+        //        console.log("totalMintAmount", mintAmount);
 
+        console.log("Testing publishing the winner");
+        //        console.log("TokenFactory WETH Balance", tw.balanceOf(address(tf)));
         tf.publishToUniswap(address(ta));
-
+        console.log("Winner is published");
         tokenPool = tf.tokensPools(address(ta));
-        assertNotEq(tokenPool, address(0x0), 'Token pool address is 0x0');
+        assertNotEq(tokenPool, address(0x0), "Token pool address should not be 0x0");
 
         uint128 liquidity = IUniswapV3Pool(tokenPool).liquidity();
         console.log("liquidity", liquidity);
         // TODO: check uniswap pool liquidity
         //assertEq(liquidity, totalCollateralFromAllTokens, 'Liquidity incorrect');
 
+        vm.stopPrank();
+
+        console.log("Testing burnTokenAndMintWinner");
+        vm.startPrank(Dave);
+        //        console.log("block.timestamp", block.timestamp);
+        vm.expectRevert(LiquidityManager.PoolTooNew.selector);
+        tf.burnTokenAndMintWinner(address(tb));
+        vm.warp(block.timestamp + 121);
+        uint256 mintAmount = tf.getMintAmountPostPublish(netUserCollateral, address(ta));
+        vm.expectEmit(true, true, true, true, address(tf));
+        emit BurnTokenAndMintWinner(
+            address(Dave), // sender
+            address(tb), // token
+            address(ta), // winnerToken
+            burnedAmount,
+            mintAmount,
+            fee,
+            block.timestamp
+        );
+        tf.burnTokenAndMintWinner(address(tb));
+        taBalanceAfter = ta.balanceOf(address(Dave));
+        assertEq(mintAmount, taBalanceAfter - taBalanceBefore, "taBalance incorrect");
         vm.stopPrank();
 
         // TODO: check uniswap pool liquidity and price

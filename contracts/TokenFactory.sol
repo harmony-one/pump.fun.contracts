@@ -148,25 +148,24 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     }
 
     function _buyReceivedAmount(address tokenAddress, uint256 paymentAmount) public view returns (uint256 tokenAmount) {
-        (uint256 paymentWithoutFee,) = _getCollateralAmountAndFee(paymentAmount);
+        (uint256 paymentWithoutFee, ) = _getCollateralAmountAndFee(paymentAmount);
         return _getBuyTokenAmount(tokenAddress, paymentWithoutFee);
     }
 
-    function _sellReceivedAmount(address tokenAddress, uint256 amount) public view returns (uint256) {
+    function _sellReceivedAmount(address tokenAddress, uint256 amount) public view returns (uint256, uint256) {
         Token token = Token(tokenAddress);
         require(amount <= token.totalSupply(), "amount exceeds supply");
         uint256 _competitionId = competitionIds[tokenAddress];
-        uint256 receivedETH = bondingCurve.computeRefundForBurning(collateralById[_competitionId][tokenAddress], token.totalSupply(), amount);
-        uint256 fee = calculateFee(receivedETH, feePercent);
-        receivedETH -= fee;
-        return receivedETH;
+        uint256 paymentAmountWithFee = bondingCurve.computeRefundForBurning(collateralById[_competitionId][tokenAddress], token.totalSupply(), amount);
+        uint256 fee = calculateFee(paymentAmountWithFee, feePercent);
+        return (paymentAmountWithFee - fee, fee);
     }
 
     function sell(address tokenAddress, uint256 amount) external nonReentrant inCompetition(tokenAddress) {
         _sell(tokenAddress, amount, msg.sender, msg.sender);
     }
 
-    function _sell(address tokenAddress, uint256 tokenAmount, address from, address to) internal returns (uint256) {
+    function _sell(address tokenAddress, uint256 tokenAmount, address from, address to) internal returns (uint256, uint256) {
         uint256 _competitionId = competitionIds[tokenAddress];
         require(_competitionId > 0, "Token not found");
         require(tokenAmount > 0, "Amount should be greater than zero");
@@ -180,11 +179,11 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         token.burn(from, tokenAmount);
         if (to != address(this)) {
             //slither-disable-next-line arbitrary-send-eth
-            (bool success,) = to.call{value: paymentAmountWithoutFee}(new bytes(0));
+            (bool success, ) = to.call{value: paymentAmountWithoutFee}(new bytes(0));
             require(success, "ETH send failed");
         }
         emit TokenSell(tokenAddress, tokenAmount, paymentAmountWithoutFee, fee, block.timestamp);
-        return paymentAmountWithoutFee;
+        return (paymentAmountWithoutFee, fee);
     }
 
     function calculateFee(uint256 _amount, uint256 _feePercent) internal pure returns (uint256) {
@@ -215,7 +214,7 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
             if (winnerTokenAddress == tokenAddress) {
                 collateralWithoutFee += collateralById[competitionId][tokenAddress];
             } else {
-                (uint256 paymentWithoutFee,) = _getCollateralAmountAndFee(collateralById[competitionId][tokenAddress]);
+                (uint256 paymentWithoutFee, ) = _getCollateralAmountAndFee(collateralById[competitionId][tokenAddress]);
                 collateralWithoutFee += paymentWithoutFee;
             }
         }
@@ -249,11 +248,26 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
             mintAmount = (currentCollateral * numTokensPerEther) / 1e18;
             Token(tokenAddress).mint(address(this), mintAmount);
         }
-        (address pool, uint256 tokenId, uint128 liquidity, uint256 actualTokenAmount, uint256 actualAssetAmount) = _mintLiquidity(tokenAddress, mintAmount, currentCollateral, address(this));
+        (address pool, uint256 tokenId, uint128 liquidity, uint256 actualTokenAmount, uint256 actualAssetAmount) = _mintLiquidity(
+            tokenAddress,
+            mintAmount,
+            currentCollateral,
+            address(this)
+        );
 
         tokensPools[tokenAddress] = pool;
         liquidityPositionTokenIds[tokenAddress] = tokenId;
-        emit WinnerLiquidityAdded(tokenAddress, tokensCreators[tokenAddress], pool, msg.sender, tokenId, liquidity, actualTokenAmount, actualAssetAmount, block.timestamp);
+        emit WinnerLiquidityAdded(
+            tokenAddress,
+            tokensCreators[tokenAddress],
+            pool,
+            msg.sender,
+            tokenId,
+            liquidity,
+            actualTokenAmount,
+            actualAssetAmount,
+            block.timestamp
+        );
     }
 
     function burnTokenAndMintWinner(address tokenAddress) external nonReentrant {
@@ -261,16 +275,18 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         require(_competitionId != currentCompetitionId, "The competition is still active");
         address winnerToken = getWinnerByCompetitionId(_competitionId);
         require(winnerToken != tokenAddress, "Token address is winner");
+        require(liquidityPositionTokenIds[winnerToken] != 0, "Winner is not yet published");
         Token token = Token(tokenAddress);
         uint256 burnedAmount = token.balanceOf(msg.sender);
         uint256 feePrior = feeAccumulated;
-        uint256 userCollateral = _sell(tokenAddress, burnedAmount, msg.sender, address(this));
-        uint256 fee = feeAccumulated - feePrior;
-        uint256 netUserCollateral = userCollateral - fee;
-        uint256 mintAmount = getMintAmountPostPublish(netUserCollateral, tokenAddress);
+        (uint256 netUserCollateral, uint256 fee) = _sell(tokenAddress, burnedAmount, msg.sender, address(this));
+        _increaseObservationCardinality(winnerToken);
+        uint256 mintAmount = getMintAmountPostPublish(netUserCollateral, winnerToken);
         Token(winnerToken).mint(msg.sender, mintAmount);
         Token(winnerToken).mint(address(this), mintAmount);
-        _increaseLiquidity(liquidityPositionTokenIds[tokenAddress],
+        WETH.deposit{value: netUserCollateral}();
+        _increaseLiquidity(
+            liquidityPositionTokenIds[winnerToken],
             tokenAddress < address(WETH) ? mintAmount : netUserCollateral,
             tokenAddress < address(WETH) ? netUserCollateral : mintAmount
         );
@@ -281,7 +297,7 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
     function withdrawFee() external onlyOwner {
         uint256 feeWithdrawable = feeAccumulated - feeWithdrawn > address(this).balance ? address(this).balance : feeAccumulated - feeWithdrawn;
-        (bool success,) = owner().call{value: feeWithdrawable}("");
+        (bool success, ) = owner().call{value: feeWithdrawable}("");
         require(success, "transfer failed");
         feeWithdrawn += feeWithdrawable;
     }
