@@ -130,20 +130,20 @@ contract TokenFactoryBase is Initializable, OwnableUpgradeable, UUPSUpgradeable,
         return _getBuyTokenAmount(tokenAddress, paymentWithoutFee);
     }
 
-    function _sellReceivedAmount(address tokenAddress, uint256 amount) public view returns (uint256) {
+    function _sellReceivedAmount(address tokenAddress, uint256 amount) public view returns (uint256, uint256) {
         Token token = Token(tokenAddress);
         require(amount <= token.totalSupply(), "amount exceeds supply");
-        uint256 receivedETH = bondingCurve.computeRefundForBurning(collateralById[tokenAddress], token.totalSupply(), amount);
-        uint256 fee = calculateFee(receivedETH, feePercent);
-        receivedETH -= fee;
-        return receivedETH;
+
+        uint256 paymentAmountWithFee = bondingCurve.computeRefundForBurning(collateralById[tokenAddress], token.totalSupply(), amount);
+        uint256 fee = calculateFee(paymentAmountWithFee, feePercent);
+        return (paymentAmountWithFee - fee, fee);
     }
 
     function sell(address tokenAddress, uint256 amount) external nonReentrant {
         _sell(tokenAddress, amount, msg.sender, msg.sender);
     }
 
-    function _sell(address tokenAddress, uint256 tokenAmount, address from, address to) internal returns (uint256) {
+    function _sell(address tokenAddress, uint256 tokenAmount, address from, address to) internal returns (uint256, uint256) {
         require(tokenAmount > 0, "Amount should be greater than zero");
         require(tokensPools[tokenAddress] == address(0), "Token is traded only on Uniswap");
 
@@ -161,7 +161,7 @@ contract TokenFactoryBase is Initializable, OwnableUpgradeable, UUPSUpgradeable,
             require(success, "ETH send failed");
         }
         emit TokenSell(tokenAddress, tokenAmount, paymentAmountWithoutFee, fee, block.timestamp);
-        return paymentAmountWithoutFee;
+        return (paymentAmountWithoutFee, fee);
     }
 
     function calculateFee(uint256 _amount, uint256 _feePercent) internal pure returns (uint256) {
