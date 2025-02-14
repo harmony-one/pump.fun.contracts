@@ -1,3 +1,22 @@
+## Version 20250213
+
+This version mainly fixes bugs in version 20241221. Namely:
+
+- `getSqrtPriceX96` was not implemented correctly. The result was in UD60x18 format, which means it was scaled by 1e18. This is now corrected.
+- `burnTokenAndMintWinner` invokes the TWAP oracle on its execution path but did not correctly check sufficient time was elapsed as specified in version 20241221, thus resulting in a silent revert when elapsed time was insufficient. This error, among some other corner conditions, are now properly checked and raised.
+- `burnTokenAndMintWinner` implementation mixed up winning token and the token being burned in computing amounts and liquidity, resulting non-sense values
+- Tokens are now properly approved prior to adding more liquidity to Uniswap (during `burnTokenAndMintWinner`), including converting more ETH to WETH in the process.
+- Fixed end-to-end tests. Now they properly verify publishing to Uniswap and burning-to-mint-winner are working without revert, and the resulting change of state makes sense (at least verifiable by manual inspection)
+
+### Interface changes:
+
+- `_sellReceivedAmount` (public function) now returns the fees charged, in addition to payment amount (in WETH) the user would have received
+- `_sell` (internal function) similarly also returns the fees
+
+### Bug fixes
+
+
+
 ## Version 20241221
 
 ### Mechanism changes:

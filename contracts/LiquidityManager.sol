@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import "forge-std/Test.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Factory.sol";
 import "./libraries/TickMath.sol";
 import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
@@ -8,8 +9,7 @@ import "@uniswap/v3-core/contracts/interfaces/IUniswapV3Pool.sol";
 import {INonfungiblePositionManager} from "./interfaces/INonfungiblePositionManager.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import {UD60x18, ud} from "@prb/math/src/UD60x18.sol";
-import {mulDiv} from "@prb/math/src/Common.sol";
+import {mulDiv, sqrt} from "@prb/math/src/Common.sol";
 import {Token} from "./Token.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol";
@@ -53,7 +53,7 @@ abstract contract LiquidityManager is IERC721Receiver, Initializable, ContextUpg
         require(tokenAmount > 0, "Token amount must be greater than zero");
 
         uint256 ratio = (ethAmount * (2 ** 96)) / tokenAmount; // Scale by 2^96 before division
-        uint256 sqrtRatio = ud(ratio).sqrt().intoUint256();
+        uint256 sqrtRatio = sqrt(ratio);
         return uint160(sqrtRatio * (2 ** 48)); // Scale the result by 2^48
     }
 
@@ -65,7 +65,6 @@ abstract contract LiquidityManager is IERC721Receiver, Initializable, ContextUpg
         require(pool == address(0), "Pool already created");
 
         pool = uniswapV3Factory.createPool(token0, token1, fee);
-        IUniswapV3Pool(pool).increaseObservationCardinalityNext(MIN_OBSERVATION_CARDINALITY);
     }
 
     function _mintLiquidity(
@@ -89,9 +88,11 @@ abstract contract LiquidityManager is IERC721Receiver, Initializable, ContextUpg
             amount1Desired = tokenAmount;
             amount0Desired = assetAmount;
         }
+        //        console.log("mintAmount/currentCollateral", tokenAmount, assetAmount);
         pool = _createLiquidityPool(token0, token1, UNISWAP_FEE);
 
         uint160 sqrtPriceX96 = getSqrtPriceX96(amount1Desired, amount0Desired);
+        //        console.log("initial sqrtPriceX96", sqrtPriceX96);
 
         IUniswapV3Pool(pool).initialize(sqrtPriceX96);
 
@@ -116,6 +117,14 @@ abstract contract LiquidityManager is IERC721Receiver, Initializable, ContextUpg
         if (tokenAddress >= address(WETH)) {
             (actualTokenAmount, actualAssetAmount) = (actualAssetAmount, actualTokenAmount);
         }
+        //        console.log("mint amount0Desired", amount0Desired);
+        //        console.log("mint tokenAmount", tokenAmount);
+        //        console.log("mint amount1Desired", amount1Desired);
+        //        console.log("mint assetAmount", assetAmount);
+        //        console.log("mint actualTokenAmount", actualTokenAmount);
+        //        console.log("mint actualAssetAmount", actualAssetAmount);
+        //        console.log("amount 1 balance ", Token(token1).balanceOf(address(this)));
+        //        console.log("amount 0 balance ", Token(token0).balanceOf(address(this)));
     }
 
     function _increaseLiquidity(
@@ -131,7 +140,28 @@ abstract contract LiquidityManager is IERC721Receiver, Initializable, ContextUpg
             amount1Min: 0,
             deadline: block.timestamp
         });
+        (, , address token0, address token1, , , , , , , , ) = nonfungiblePositionManager.positions(tokenId);
+        Token(token0).approve(address(nonfungiblePositionManager), amount0Desired);
+        Token(token1).approve(address(nonfungiblePositionManager), amount1Desired);
+        //        console.log("amount1Desired", amount1Desired);
+        //        console.log("amount0Desired", amount0Desired);
+        //        console.log("amount 1 balance ", Token(token1).balanceOf(address(this)));
+        //        console.log("amount 0 balance ", Token(token0).balanceOf(address(this)));
         (liquidity, amount0, amount1) = nonfungiblePositionManager.increaseLiquidity(params);
+    }
+
+    function _increaseObservationCardinality(address tokenAddress) internal {
+        address token0;
+        address token1;
+        if (tokenAddress < address(WETH)) {
+            token0 = tokenAddress;
+            token1 = address(WETH);
+        } else {
+            token1 = tokenAddress;
+            token0 = address(WETH);
+        }
+        address pool = uniswapV3Factory.getPool(token0, token1, UNISWAP_FEE);
+        IUniswapV3Pool(pool).increaseObservationCardinalityNext(MIN_OBSERVATION_CARDINALITY);
     }
 
     function getSpotSqrtPriceX96(address tokenAddress) public view returns (uint160) {
@@ -162,9 +192,9 @@ abstract contract LiquidityManager is IERC721Receiver, Initializable, ContextUpg
         (uint32 observationTimestamp, , , bool initialized) = IUniswapV3Pool(pa).observations((observationIndex + 1) % observationCardinality);
         if (!initialized) {
             (observationTimestamp, , , ) = IUniswapV3Pool(pa).observations(0);
-            if (block.timestamp - observationTimestamp < duration) {
-                revert PoolTooNew();
-            }
+        }
+        if (block.timestamp - observationTimestamp < duration) {
+            revert PoolTooNew();
         }
         (int56[] memory tickCums, ) = IUniswapV3Pool(pa).observe(obs);
         return TickMath.getSqrtRatioAtTick(int24((tickCums[1] - tickCums[0]) / int56(int32(duration))));
@@ -173,6 +203,8 @@ abstract contract LiquidityManager is IERC721Receiver, Initializable, ContextUpg
     function getMintAmountPostPublish(uint256 collateralAmount, address tokenAddress) public view returns (uint256) {
         // price = token1 / token0, i.e. how many token1 is equivalent to 1 unit of token0
         uint160 sqrtPriceX96 = getTwapSqrtPriceX96(tokenAddress, TWAP_DURATION);
+        //        console.log("sqrtPriceX96", sqrtPriceX96);
+        //        console.log("collateralAmount", collateralAmount);
         // if sqrtPriceX96 is more than this, squaring it would overflow uint256
         uint256 sqrtCeiling = 340275971719517849884101479065584693834;
         if (tokenAddress > address(WETH)) {
