@@ -23,6 +23,7 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     uint256 public feePercent; // bp
     uint256 public feeAccumulated;
     uint256 public feeWithdrawn;
+    uint256 public requiredCollateral;
 
     mapping(uint256 => address) public winners;
     mapping(uint256 => mapping(address => uint256)) public collateralById;
@@ -99,6 +100,10 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
     function setFeePercent(uint256 _feePercent) external onlyOwner {
         feePercent = _feePercent;
+    }
+
+    function setRequiredCollateral(uint256 _requiredCollateral) external onlyOwner {
+        requiredCollateral = _requiredCollateral;
     }
 
     // Token functions
