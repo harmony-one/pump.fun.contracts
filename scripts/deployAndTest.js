@@ -78,8 +78,8 @@ async function main() {
     console.log("publishToUniswap...");
     await tokenFactory.connect(owner).publishToUniswap(tokenAddress);
 
-    console.log("Try Buying Token after publsih...");
-    await tokenFactory.connect(owner).buy(tokenAddress, { value: ethers.utils.parseEther("1") });
+    // console.log("Try Buying Token after publsih...");
+    // await tokenFactory.connect(owner).buy(tokenAddress, { value: ethers.utils.parseEther("1") });
 }
 
 main()
