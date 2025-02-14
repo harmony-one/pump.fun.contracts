@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/proxy/Clones.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -10,7 +10,7 @@ import {BancorBondingCurve} from "./BancorBondingCurve.sol";
 import {LiquidityManager} from "./LiquidityManager.sol";
 import {Token} from "./Token.sol";
 
-contract TokenFactoryBase is Initializable, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, LiquidityManager {
+contract TokenFactoryBase is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, LiquidityManager {
     uint256 public VERSION;
     uint256 public constant FEE_DENOMINATOR = 10000;
 
@@ -27,6 +27,8 @@ contract TokenFactoryBase is Initializable, OwnableUpgradeable, UUPSUpgradeable,
     mapping(address => address) public tokensCreators;
     mapping(address => address) public tokensPools;
     mapping(address => uint256) public liquidityPositionTokenIds;
+
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
     // Events
     event TokenCreated(address indexed token, string name, string symbol, string uri, address creator, uint256 timestamp);
@@ -55,7 +57,11 @@ contract TokenFactoryBase is Initializable, OwnableUpgradeable, UUPSUpgradeable,
         uint256 _feePercent,
         uint256 _requiredCollateral
     ) public initializer {
-        __Ownable_init();
+        __AccessControl_init();
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(MANAGER_ROLE, msg.sender);
+        // _grantRole(MANAGER_ROLE, admin);
+
         __ReentrancyGuard_init();
         __LiquidityManager_init(_uniswapV3Factory, _nonfungiblePositionManager, _weth);
 
@@ -67,19 +73,19 @@ contract TokenFactoryBase is Initializable, OwnableUpgradeable, UUPSUpgradeable,
     }
 
     /// @dev Required by UUPSUpgradeable to authorize upgrades
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     // Admin functions
 
-    function setBondingCurve(address _bondingCurve) external onlyOwner {
+    function setBondingCurve(address _bondingCurve) external onlyRole(DEFAULT_ADMIN_ROLE) {
         bondingCurve = BancorBondingCurve(_bondingCurve);
     }
 
-    function setRequiredCollateral(uint256 _requiredCollateral) external onlyOwner {
+    function setRequiredCollateral(uint256 _requiredCollateral) external onlyRole(DEFAULT_ADMIN_ROLE) {
         requiredCollateral = _requiredCollateral;
     }
 
-    function setFeePercent(uint256 _feePercent) external onlyOwner {
+    function setFeePercent(uint256 _feePercent) external onlyRole(DEFAULT_ADMIN_ROLE) {
         feePercent = _feePercent;
     }
 
@@ -168,9 +174,9 @@ contract TokenFactoryBase is Initializable, OwnableUpgradeable, UUPSUpgradeable,
         return (_amount * _feePercent) / FEE_DENOMINATOR;
     }
 
-    function withdrawFee() external onlyOwner {
+    function withdrawFee() external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 feeWithdrawable = feeAccumulated - feeWithdrawn > address(this).balance ? address(this).balance : feeAccumulated - feeWithdrawn;
-        (bool success,) = owner().call{value: feeWithdrawable}("");
+        (bool success, ) = payable(msg.sender).call{value: feeWithdrawable}("");
         require(success, "transfer failed");
         feeWithdrawn += feeWithdrawable;
     }

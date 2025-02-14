@@ -2,7 +2,7 @@
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/proxy/Clones.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -10,7 +10,7 @@ import {LiquidityManager} from "./LiquidityManager.sol";
 import {BancorBondingCurve} from "./BancorBondingCurve.sol";
 import {Token} from "./Token.sol";
 
-contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, LiquidityManager {
+contract TokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable, LiquidityManager {
     uint256 public VERSION;
     uint256 public constant FEE_DENOMINATOR = 10000;
     mapping(uint256 => address[]) public tokensByCompetitionId;
@@ -31,6 +31,8 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     mapping(address => address) public tokensCreators;
     mapping(address => address) public tokensPools;
     mapping(address => uint256) public liquidityPositionTokenIds;
+
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
     // Events
     event TokenCreated(address indexed token, string name, string symbol, string uri, address creator, uint256 competitionId, uint256 timestamp);
@@ -68,7 +70,10 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         address _weth,
         uint256 _feePercent
     ) public initializer {
-        __Ownable_init();
+        __AccessControl_init();
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(MANAGER_ROLE, msg.sender);
+
         __ReentrancyGuard_init();
         __LiquidityManager_init(_uniswapV3Factory, _nonfungiblePositionManager, _weth);
 
@@ -80,7 +85,7 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
     }
 
     /// @dev Required by UUPSUpgradeable to authorize upgrades
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     modifier inCompetition(address tokenAddress) {
         require(competitionIds[tokenAddress] == currentCompetitionId, "The competition for this token has already ended");
@@ -89,20 +94,20 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
 
     // Admin functions
 
-    function startNewCompetition() external onlyOwner {
+    function startNewCompetition() external onlyRole(MANAGER_ROLE) {
         currentCompetitionId = currentCompetitionId + 1;
         emit NewCompetitionStarted(currentCompetitionId, block.timestamp);
     }
 
-    function setBondingCurve(address _bondingCurve) external onlyOwner {
+    function setBondingCurve(address _bondingCurve) external onlyRole(DEFAULT_ADMIN_ROLE) {
         bondingCurve = BancorBondingCurve(_bondingCurve);
     }
 
-    function setFeePercent(uint256 _feePercent) external onlyOwner {
+    function setFeePercent(uint256 _feePercent) external onlyRole(DEFAULT_ADMIN_ROLE) {
         feePercent = _feePercent;
     }
 
-    function setRequiredCollateral(uint256 _requiredCollateral) external onlyOwner {
+    function setRequiredCollateral(uint256 _requiredCollateral) external onlyRole(DEFAULT_ADMIN_ROLE) {
         requiredCollateral = _requiredCollateral;
     }
 
@@ -283,7 +288,6 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         require(liquidityPositionTokenIds[winnerToken] != 0, "Winner is not yet published");
         Token token = Token(tokenAddress);
         uint256 burnedAmount = token.balanceOf(msg.sender);
-        uint256 feePrior = feeAccumulated;
         (uint256 netUserCollateral, uint256 fee) = _sell(tokenAddress, burnedAmount, msg.sender, address(this));
         _increaseObservationCardinality(winnerToken);
         uint256 mintAmount = getMintAmountPostPublish(netUserCollateral, winnerToken);
@@ -300,9 +304,9 @@ contract TokenFactory is Initializable, OwnableUpgradeable, UUPSUpgradeable, Ree
         emit BurnTokenAndMintWinner(msg.sender, tokenAddress, winnerToken, burnedAmount, mintAmount, fee, block.timestamp);
     }
 
-    function withdrawFee() external onlyOwner {
+    function withdrawFee() external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 feeWithdrawable = feeAccumulated - feeWithdrawn > address(this).balance ? address(this).balance : feeAccumulated - feeWithdrawn;
-        (bool success, ) = owner().call{value: feeWithdrawable}("");
+        (bool success, ) = payable(msg.sender).call{value: feeWithdrawable}("");
         require(success, "transfer failed");
         feeWithdrawn += feeWithdrawable;
     }
