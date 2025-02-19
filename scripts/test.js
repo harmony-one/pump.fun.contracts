@@ -51,14 +51,32 @@ async function deployTokenFactory() {
     const PositionManager = new ContractFactory(nonfungiblePositionManager.abi, nonfungiblePositionManager.bytecode, deployer);
     const positionManager = await PositionManager.deploy(uniswapV3FactoryAddress, weth.address, ADDRESS_ZERO);
 
-    const tokenFactory = await deployContract("TokenFactory", [
-        tokenImplementation.address, // _tokenImplementation,
-        uniswapV3FactoryAddress,
-        positionManager.address,
-        bondingCurve.address, //_bondingCurve,
-        weth.address,
-        100, // _feePercent
-    ], "TokenFactory")
+    // const tokenFactory = await deployContract("TokenFactory", [
+    //     tokenImplementation.address, // _tokenImplementation,
+    //     uniswapV3FactoryAddress,
+    //     positionManager.address,
+    //     bondingCurve.address, //_bondingCurve,
+    //     weth.address,
+    //     100, // _feePercent
+    // ], "TokenFactory")
+
+    // Deploy TokenFactoryUpgradeable proxy contract
+    console.log("Deploying TokenFactory...");
+    const TokenFactoryUpgradeable = await ethers.getContractFactory("TokenFactory");
+    const tokenFactory = await upgrades.deployProxy(
+        TokenFactoryUpgradeable,
+        [
+            tokenImplementation.address,
+            uniswapV3FactoryAddress,
+            positionManager.address,
+            bondingCurve.address,
+            weth.address,
+            100, // _feePercent
+        ],
+        { initializer: "initialize" }
+    );
+    await tokenFactory.deployed();
+    console.log("TokenFactoryUpgradeable deployed to:", tokenFactory.address);
 
     return { tokenFactory, bondingCurve };
 }
@@ -141,17 +159,19 @@ async function test() {
     )
 
     await sendTxn(
-        tokenFactory.burnTokenAndMintWinner(tokenA),
-        "tokenFactory.burnTokenAndMintWinner for NOT Winner"
+        tokenFactory.publishToUniswap(tokenB),
+        "tokenFactory.publishToUniswap for Winner"
     );
 
     await getTokenBalances(tokenA);
-    await getTokenBalances(tokenB);
+    await getTokenBalances(tokenB);   
+
+    await sleep(120 * 1000);
 
     await sendTxn(
-        tokenFactory.publishToUniswap(tokenB),
-        "tokenFactory.publishToUniswap for Winner"
-    );    
+        tokenFactory.burnTokenAndMintWinner(tokenA),
+        "tokenFactory.burnTokenAndMintWinner for NOT Winner"
+    ); 
 
     await getTokenBalances(tokenA);
     await getTokenBalances(tokenB);

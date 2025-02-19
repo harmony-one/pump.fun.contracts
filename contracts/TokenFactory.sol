@@ -41,6 +41,8 @@ contract TokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     event TokenMinted(address indexed token, uint256 assetAmount, uint256 tokenAmount, uint256 timestamp);
     event TokenSell(address indexed token, uint256 amount0In, uint256 amount0Out, uint256 fee, uint256 timestamp);
     event SetWinner(address indexed winner, uint256 competitionId, uint256 timestamp);
+    event FeeWithdrawn(address indexed admin, uint256 amount);
+    
     event BurnTokenAndMintWinner(
         address indexed sender,
         address indexed token,
@@ -304,10 +306,17 @@ contract TokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
         emit BurnTokenAndMintWinner(msg.sender, tokenAddress, winnerToken, burnedAmount, mintAmount, fee, block.timestamp);
     }
 
-    function withdrawFee() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 feeWithdrawable = feeAccumulated - feeWithdrawn > address(this).balance ? address(this).balance : feeAccumulated - feeWithdrawn;
-        (bool success, ) = payable(msg.sender).call{value: feeWithdrawable}("");
-        require(success, "transfer failed");
+    function withdrawFee(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 availableFee = feeAccumulated > feeWithdrawn ? feeAccumulated - feeWithdrawn : 0;
+        uint256 feeWithdrawable = availableFee > address(this).balance ? address(this).balance : availableFee;
+
+        require(feeWithdrawable > 0, "No fees available to withdraw");
+
+        (bool success, ) = payable(recipient).call{value: feeWithdrawable}("");
+        require(success, "Transfer failed");
+
         feeWithdrawn += feeWithdrawable;
+
+        emit FeeWithdrawn(msg.sender, feeWithdrawable);
     }
 }
