@@ -307,7 +307,8 @@ contract TokenFactory is Initializable, AccessControlUpgradeable, UUPSUpgradeabl
     }
 
     function withdrawFee(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 availableFee = feeAccumulated > feeWithdrawn ? feeAccumulated - feeWithdrawn : 0;
+        require(feeAccumulated > feeWithdrawn, "fee accumulated should be more than fee withdrawn");
+        uint256 availableFee = feeAccumulated - feeWithdrawn;
         uint256 feeWithdrawable = availableFee > address(this).balance ? address(this).balance : availableFee;
 
         require(feeWithdrawable > 0, "No fees available to withdraw");
