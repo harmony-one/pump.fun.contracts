@@ -57,11 +57,23 @@ async function main() {
     const tokenAddress = receipt.events.find(e => e.event === "TokenCreated").args.token;
     console.log(`Token created at: ${tokenAddress}`);
 
+    console.log("Creating Token B...");
+    const txB = await tokenFactory.createToken("TestTokenB", "TTKB", "testuri");
+    const receiptB = await txB.wait();
+    const tokenAddressB = receiptB.events.find(e => e.event === "TokenCreated").args.token;
+    console.log(`Token B created at: ${tokenAddressB}`);
+
     console.log("Buying Token...");
     await tokenFactory.connect(owner).buy(tokenAddress, { value: ethers.utils.parseEther("1") });
     const tokenInstance = await ethers.getContractAt("Token", tokenAddress);
     const userBalance = await tokenInstance.balanceOf(owner.address);
     console.log(`User bought tokens, balance: ${userBalance.toString()}`);
+
+    console.log("Buying Token B...");
+    await tokenFactory.connect(owner).buy(tokenAddressB, { value: ethers.utils.parseEther("1") });
+    const tokenInstanceB = await ethers.getContractAt("Token", tokenAddress);
+    const userBalanceB = await tokenInstanceB.balanceOf(owner.address);
+    console.log(`User bought tokens B, balance: ${userBalanceB.toString()}`);
 
     console.log("Selling Token...");
     await tokenInstance.connect(owner).approve(tokenFactory.address, userBalance);
@@ -69,7 +81,7 @@ async function main() {
     console.log("User sold tokens.");
 
     console.log("Withdrawing Fees...");
-    await tokenFactory.withdrawFee();
+    await tokenFactory.withdrawFee(owner.address);
     console.log("Fees withdrawn.");
 
     console.log("Buying Token...");
@@ -77,6 +89,9 @@ async function main() {
 
     console.log("publishToUniswap...");
     await tokenFactory.connect(owner).publishToUniswap(tokenAddress);
+
+    // console.log("burnTokenAndMintWinner...");
+    // await tokenFactory.connect(owner).burnTokenAndMintWinner(tokenAddressB);
 
     // console.log("Try Buying Token after publsih...");
     // await tokenFactory.connect(owner).buy(tokenAddress, { value: ethers.utils.parseEther("1") });

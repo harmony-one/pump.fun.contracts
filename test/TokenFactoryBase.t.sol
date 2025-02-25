@@ -5,7 +5,6 @@ import "forge-std/Test.sol";
 import "@contracts/TokenFactoryBase.sol";
 import "@contracts/BancorBondingCurve.sol";
 import "@contracts/Token.sol";
-import "openzeppelin/contracts/proxy/Clones.sol";
 
 contract TokenFactoryTest is Test {
     TokenFactoryBase tokenFactory;
@@ -13,11 +12,29 @@ contract TokenFactoryTest is Test {
     Token token;
     address user = address(0x1);
     address owner = address(this);
+
+    uint256 internal FEE_PERCENT = vm.envUint("FEE_PERCENT");
+    uint256 internal SLOPE_SCALED = vm.envUint("SLOPE_SCALED");
+    uint32 internal WEIGHT_SCALED = uint32(vm.envUint("WEIGHT_SCALED"));
+    address internal UNISWAP_V3_FACTORY = vm.envAddress("UNISWAP_V3_FACTORY");
+    address internal UNISWAP_V3_NPM = vm.envAddress("UNISWAP_V3_NPM");
+    address internal WETH = vm.envAddress("WETH");
     
     function setUp() public {
-        bondingCurve = new BancorBondingCurve();
+        bondingCurve = new BancorBondingCurve(SLOPE_SCALE * 2.0, MAX_WEIGHT / (1 + 1));
+        Token tref = new Token();
+
         tokenFactory = new TokenFactoryBase();
-        tokenFactory.initialize(address(new Token()), address(bondingCurve), 500); // 5% fee
+        
+        tokenFactory.initialize(
+            address(tref), 
+            UNISWAP_V3_FACTORY, 
+            UNISWAP_V3_NPM, 
+            address(bondingCurve), 
+            WETH, 
+            FEE_PERCENT,
+            1 ether
+        );
     }
     
     function testCreateToken() public {
@@ -63,11 +80,15 @@ contract TokenFactoryTest is Test {
         tokenFactory.buy{value: 1 ether}(address(newToken));
         vm.stopPrank();
         
-        uint256 feeBefore = address(owner).balance;
+        uint256 feeBefore = address(user).balance;
+
+        assertGt(newToken.balanceOf(address(user)), 0);
+        assertGt(address(tokenFactory).balance, 0);
+
         vm.startPrank(owner);
-        tokenFactory.withdrawFee();
+        tokenFactory.withdrawFee(user);
         vm.stopPrank();
         
-        assertGt(owner.balance, feeBefore);
+        assertGt(address(user).balance, feeBefore);
     }
 }

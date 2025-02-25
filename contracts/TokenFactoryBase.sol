@@ -35,6 +35,7 @@ contract TokenFactoryBase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     event TokenBuy(address indexed token, uint256 amount0In, uint256 amount0Out, uint256 fee, uint256 timestamp);
     event TokenMinted(address indexed token, uint256 assetAmount, uint256 tokenAmount, uint256 timestamp);
     event TokenSell(address indexed token, uint256 amount0In, uint256 amount0Out, uint256 fee, uint256 timestamp);
+    event FeeWithdrawn(address indexed admin, uint256 amount);
 
     event WinnerLiquidityAdded(
         address indexed tokenAddress,
@@ -132,7 +133,7 @@ contract TokenFactoryBase is Initializable, AccessControlUpgradeable, UUPSUpgrad
     }
 
     function _buyReceivedAmount(address tokenAddress, uint256 paymentAmount) public view returns (uint256 tokenAmount) {
-        (uint256 paymentWithoutFee,) = _getCollateralAmountAndFee(paymentAmount);
+        (uint256 paymentWithoutFee, ) = _getCollateralAmountAndFee(paymentAmount);
         return _getBuyTokenAmount(tokenAddress, paymentWithoutFee);
     }
 
@@ -163,7 +164,7 @@ contract TokenFactoryBase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         token.burn(from, tokenAmount);
         if (to != address(this)) {
             //slither-disable-next-line arbitrary-send-eth
-            (bool success,) = to.call{value: paymentAmountWithoutFee}(new bytes(0));
+            (bool success, ) = to.call{value: paymentAmountWithoutFee}(new bytes(0));
             require(success, "ETH send failed");
         }
         emit TokenSell(tokenAddress, tokenAmount, paymentAmountWithoutFee, fee, block.timestamp);
@@ -174,11 +175,19 @@ contract TokenFactoryBase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         return (_amount * _feePercent) / FEE_DENOMINATOR;
     }
 
-    function withdrawFee() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 feeWithdrawable = feeAccumulated - feeWithdrawn > address(this).balance ? address(this).balance : feeAccumulated - feeWithdrawn;
-        (bool success, ) = payable(msg.sender).call{value: feeWithdrawable}("");
-        require(success, "transfer failed");
+    function withdrawFee(address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(feeAccumulated > feeWithdrawn, "fee accumulated should be more than fee withdrawn");
+        uint256 availableFee = feeAccumulated - feeWithdrawn;
+        uint256 feeWithdrawable = availableFee > address(this).balance ? address(this).balance : availableFee;
+
+        require(feeWithdrawable > 0, "No fees available to withdraw");
+
+        (bool success, ) = payable(recipient).call{value: feeWithdrawable}("");
+        require(success, "Transfer failed");
+
         feeWithdrawn += feeWithdrawable;
+
+        emit FeeWithdrawn(msg.sender, feeWithdrawable);
     }
 
     function publishToUniswap(address tokenAddress) external nonReentrant {
@@ -194,10 +203,25 @@ contract TokenFactoryBase is Initializable, AccessControlUpgradeable, UUPSUpgrad
             mintAmount = (currentCollateral * numTokensPerEther) / 1e18;
             Token(tokenAddress).mint(address(this), mintAmount);
         }
-        (address pool, uint256 tokenId, uint128 liquidity, uint256 actualTokenAmount, uint256 actualAssetAmount) = _mintLiquidity(tokenAddress, mintAmount, currentCollateral, address(this));
+        (address pool, uint256 tokenId, uint128 liquidity, uint256 actualTokenAmount, uint256 actualAssetAmount) = _mintLiquidity(
+            tokenAddress,
+            mintAmount,
+            currentCollateral,
+            address(this)
+        );
 
         tokensPools[tokenAddress] = pool;
         liquidityPositionTokenIds[tokenAddress] = tokenId;
-        emit WinnerLiquidityAdded(tokenAddress, tokensCreators[tokenAddress], pool, msg.sender, tokenId, liquidity, actualTokenAmount, actualAssetAmount, block.timestamp);
+        emit WinnerLiquidityAdded(
+            tokenAddress,
+            tokensCreators[tokenAddress],
+            pool,
+            msg.sender,
+            tokenId,
+            liquidity,
+            actualTokenAmount,
+            actualAssetAmount,
+            block.timestamp
+        );
     }
 }

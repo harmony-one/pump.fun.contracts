@@ -47,7 +47,18 @@ contract E2ETest is Test {
         vm.deal(Owner, 1000 ether);
 
         bc = new BancorBondingCurve(SLOPE_SCALED, WEIGHT_SCALED);
-        tf = new TokenFactory(address(tref), UNISWAP_V3_FACTORY, UNISWAP_V3_NPM, address(bc), WETH, FEE_PERCENT);
+    
+        tf = new TokenFactory();
+        
+        tf.initialize(
+            address(tref), 
+            UNISWAP_V3_FACTORY, 
+            UNISWAP_V3_NPM, 
+            address(bc), 
+            WETH, 
+            FEE_PERCENT
+        );
+        
         vm.stopPrank();
 
         tw = Token(WETH);
