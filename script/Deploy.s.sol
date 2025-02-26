@@ -8,15 +8,17 @@ import {Token} from "@contracts/Token.sol";
 import "@contracts/BancorBondingCurve.sol";
 import "openzeppelin-contracts/contracts/proxy/transparent/ProxyAdmin.sol";
 import "openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import {UD60x18, ud, convert, unwrap, pow, add, mul, sub, div, convert} from "@prb/math/src/UD60x18.sol";
+import {UD60x18, ud, unwrap, pow, add, mul, sub, div, convert} from "@prb/math/src/UD60x18.sol";
 
 contract DeployScript is Script {
     function run() external {
         // Load addresses and parameters from env variables
 
+        vm.startBroadcast();
+
         address uniswap = vm.envAddress("UNISWAP_V3_FACTORY");
         address positionMgr = vm.envAddress("UNISWAP_V3_NPM");
-        address weth = vm.envAddress("WETH_ADDRESS");
+        address weth = vm.envAddress("WETH");
 
         uint256 FEE_PERCENT = vm.envUint("FEE_PERCENT");
         uint256 SLOPE_SCALED = vm.envUint("SLOPE_SCALED");
@@ -25,7 +27,7 @@ contract DeployScript is Script {
         uint256 feePercent = vm.envUint("FEE_PERCENT"); // e.g., 100
 
         // For raw proxy data, use a placeholder admin address
-        address placeholderAdmin = vm.envAddress("PLACEHOLDER_ADMIN");
+        address adminAddress = vm.envAddress("ADMIN_MULTISIG");
 
         BancorBondingCurve boundingCurve = new BancorBondingCurve(SLOPE_SCALED, WEIGHT_SCALED);
         {
@@ -37,6 +39,8 @@ contract DeployScript is Script {
         }
         Token tokenImpl = new Token();
         console2.log("Token implementation at ", address(tokenImpl));
+
+        vm.stopBroadcast();
         //
         //        // 1. Encode the initializer call for TokenFactoryBase.
         //        bytes memory initData = abi.encodeWithSignature(
