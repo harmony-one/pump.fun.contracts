@@ -24,6 +24,8 @@ contract DeployScript is Script {
     uint256 requiredCollateral = vm.envUint("REQUIRED_COLLATERAL"); // e.g., 100
     address adminAddress = vm.envAddress("ADMIN_MULTISIG");
 
+    address create2Proxy = vm.envAddress("CREATE2_PROXY");
+
     function run() external {
         // Load addresses and parameters from env variables
 
@@ -53,30 +55,46 @@ contract DeployScript is Script {
         console2.log("All CLI deployment complete. Complete the rest on multisig");
         {
             bytes memory tokenFactoryInitData = abi.encodeWithSignature(
-                "initialize(address,address,address,address,address,uint256)",
-                address(tokenImpl),
-                uniswap,
-                positionMgr,
-                bondingCurve,
-                weth,
-                feePercent
-            );
-            bytes memory tokenFactoryProxyDeploymentData = abi.encodePacked(type(TransparentUpgradeableProxy).creationCode, abi.encode(tokenFactoryImpl, address(proxyAdmin), tokenFactoryInitData));
-            console2.log("[EXECUTE ON MULTISIG] [To: 0x0] [TokenFactory Deploy Data] ", vm.toString(tokenFactoryProxyDeploymentData));
-        }
-        {
-            bytes memory tokenFactoryBaseInitData = abi.encodeWithSignature(
-                "initialize(address,address,address,address,address,uint256,uint256)",
+                "initialize(address,address,address,address,address,uint256,address)",
                 address(tokenImpl),
                 uniswap,
                 positionMgr,
                 bondingCurve,
                 weth,
                 feePercent,
-                requiredCollateral
+                adminAddress
             );
-            bytes memory tokenFactoryBaseProxyDeploymentData = abi.encodePacked(type(TransparentUpgradeableProxy).creationCode, abi.encode(tokenFactoryBaseImpl, address(proxyAdmin), tokenFactoryBaseInitData));
-            console2.log("[EXECUTE ON MULTISIG] [To: 0x0] [TokenFactory Deploy Data] ", vm.toString(tokenFactoryBaseProxyDeploymentData));
+            bytes memory tokenFactoryProxyDeploymentData = abi.encodePacked(
+                type(TransparentUpgradeableProxy).creationCode,
+                abi.encode(tokenFactoryImpl, address(proxyAdmin), tokenFactoryInitData)
+            );
+            console2.log(
+                "[TokenFactory Deploy Data][EXECUTE ON MULTISIG] [To: %s] %s ",
+                create2Proxy,
+                vm.toString(bytes.concat(bytes32(0), tokenFactoryProxyDeploymentData))
+            );
+        }
+        {
+            bytes memory tokenFactoryBaseInitData = abi.encodeWithSignature(
+                "initialize(address,address,address,address,address,uint256,uint256,address)",
+                address(tokenImpl),
+                uniswap,
+                positionMgr,
+                bondingCurve,
+                weth,
+                feePercent,
+                requiredCollateral,
+                adminAddress
+            );
+            bytes memory tokenFactoryBaseProxyDeploymentData = abi.encodePacked(
+                type(TransparentUpgradeableProxy).creationCode,
+                abi.encode(tokenFactoryBaseImpl, address(proxyAdmin), tokenFactoryBaseInitData)
+            );
+            console2.log(
+                "[TokenFactory Deploy Data][EXECUTE ON MULTISIG] [To: %s] %s ",
+                create2Proxy,
+                vm.toString(bytes.concat(bytes32(0), tokenFactoryBaseProxyDeploymentData))
+            );
         }
     }
 }
