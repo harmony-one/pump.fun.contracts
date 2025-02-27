@@ -56,11 +56,12 @@ contract TokenFactoryBase is Initializable, AccessControlUpgradeable, UUPSUpgrad
         address _bondingCurve,
         address _weth,
         uint256 _feePercent,
-        uint256 _requiredCollateral
+        uint256 _requiredCollateral,
+        address admin
     ) public initializer {
         __AccessControl_init();
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _setupRole(MANAGER_ROLE, msg.sender);
+        _setupRole(DEFAULT_ADMIN_ROLE, admin);
+        _setupRole(MANAGER_ROLE, admin);
         // _grantRole(MANAGER_ROLE, admin);
 
         __ReentrancyGuard_init();

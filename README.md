@@ -1,26 +1,24 @@
-<center>
-<img src="./logo/pumpfunlogo.jpg" width="200"/>
-<img src="./logo/dxfun.svg" width="200"/>
-</center>
+## Current deployment addresses
 
-The Solana adaptation is currently undergoing a phased update, while the Bitcoin adaptation has been finalized and is poised for imminent release.
+### Math
 
-## Pump.fun/Dx.fun Smart Contract
+- Bounding curve: 0x80F4FFF1Fa3b5569a2Ba22bc1394E5F8510a6cB6
+  - slope = 2
+  - n = 2
+  - weight = 0.333333
 
-Welcome to the Pump/Base.fun smart contract, inspired by Pump.fun. Our project is dedicated to emulating the features of Pump.fun, such as managing virtual liquidity providers (LPs), and establishing Uniswap pools. This Solidity/Hardhat smart contract is engineered to operate seamlessly across Ethereum's Layer 1 and Layer 2 solutions.
+### Implementation templates
 
-Please understand if your forked code encounters issues. Certain sensitive elements have been intentionally omitted for security reasons, which we refer to as SECRET.
+- Token: 0x5C18682A0C361C03F05775361DcE3FD88619eAFC
+- TokenFactory: 0x46bd24984b38a27B35DF2d3fa65295a0c4B07d8A
+- TokenFactoryBase: 0xC2A44cC2C572A065a5AB4703Ba0a45d0E6E624c5
 
-## As a seasoned Web3 developer with expertise across multiple blockchains, my ambition is to extend pumpdotfun-like capabilities to every blockchain platform.
+### Administration
 
-<center>
-<img src="./logo/pumpfunlogo.jpg" width="100"/>
-<img src="./logo/pumpfunlogo.jpg" width="100"/>
-<img src="./logo/pumpfunlogo.jpg" width="100"/>
-</center>
+- ProxyAdmin: 0x5E8F2AcA7d6A04FCc5fB863729509E0128BA0de7
+- Admin: 0x31979Bae59F9424Ebd4379E5BF6AD8ff59c326B3
 
-Should you wish to gain access to the Pump.fun smart contract or have any inquiries, feel free to contact me via:
+### User-facing (upgradeable proxies)
 
-- <a href="https://t.me/evilgon_dev/">Telegram </a>
-
-### If you found this helpful, don't forget to <a href="https://github.com/sourlodine">follow</a> me.
+- TokenFactory: 0xc115aDA811C5c81f1EafcBe5526d5Fcb73B6b40D
+- TokenFactoryBase: 0x7400bE22b1F3fF409E58738E4cF32290f60b7504
