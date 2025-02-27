@@ -3,7 +3,7 @@ pragma solidity ^0.8.10;
 
 import {console2} from "forge-std/console2.sol";
 import "forge-std/Script.sol";
-import {TokenFactoryBase} from "@contracts/TokenFactoryBase.sol";
+import {TokenFactory} from "@contracts/TokenFactory.sol";
 import {Token} from "@contracts/Token.sol";
 import "@contracts/BancorBondingCurve.sol";
 import "openzeppelin-contracts/contracts/proxy/transparent/ProxyAdmin.sol";
@@ -29,46 +29,38 @@ contract DeployScript is Script {
         // For raw proxy data, use a placeholder admin address
         address adminAddress = vm.envAddress("ADMIN_MULTISIG");
 
-        BancorBondingCurve boundingCurve = new BancorBondingCurve(SLOPE_SCALED, WEIGHT_SCALED);
+        BancorBondingCurve bondingCurve = new BancorBondingCurve(SLOPE_SCALED, WEIGHT_SCALED);
         {
             UD60x18 weight = convert(WEIGHT_SCALED).div(convert(MAX_WEIGHT));
-            console2.log("Bounding curve is deployed at: ", address(boundingCurve));
+            console2.log("Bounding curve is deployed at: ", address(bondingCurve));
             console2.log("- slope %e", convert(SLOPE_SCALED).div(convert(SLOPE_SCALE)).unwrap());
             console2.log("- n %e", convert(1).div(weight).sub(convert(1)).unwrap());
             console2.log("-- (weight) %e", weight.unwrap());
         }
         Token tokenImpl = new Token();
         console2.log("Token implementation at ", address(tokenImpl));
-
+        TokenFactory tokenFactoryImpl = new TokenFactory();
+        console2.log("TokenFactory implementation at ", address(tokenFactoryImpl));
+        ProxyAdmin proxyAdmin = new ProxyAdmin();
+        console2.log("ProxyAdmin deployed at ", address(proxyAdmin));
+        proxyAdmin.transferOwnership(adminAddress);
+        console2.log("ProxyAdmin ownership transferred to ", proxyAdmin.owner());
         vm.stopBroadcast();
-        //
-        //        // 1. Encode the initializer call for TokenFactoryBase.
-        //        bytes memory initData = abi.encodeWithSignature(
-        //            "initialize(address,address,address,address,address,uint256,string)",
-        //            tokenImpl,
-        //            uniswap,
-        //            positionMgr,
-        //            bondingCurve,
-        //            weth,
-        //            feePercent,
-        //            initStr
-        //        );
-        //        console2.log("Initializer data:", toHex(initData));
-        //
-        //        // 2. Get raw deploy data for ProxyAdmin.
-        //        bytes memory proxyAdminData = abi.encodePacked(type(ProxyAdmin).creationCode);
-        //        console2.log("ProxyAdmin deploy data:", toHex(proxyAdminData));
-        //
-        //        // 3. Get raw deploy data for TransparentUpgradeableProxy.
-        //        bytes memory proxyData = abi.encodePacked(type(TransparentUpgradeableProxy).creationCode, abi.encode(tokenImpl, placeholderAdmin, initData));
-        //        console2.log("TransparentUpgradeableProxy deploy data:", toHex(proxyData));
-        //
-        //        // Optional: deploy the contracts.
-        //        vm.startBroadcast();
-        //        ProxyAdmin admin = new ProxyAdmin();
-        //        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(tokenImpl, address(admin), initData);
-        //        vm.stopBroadcast();
-        //        console2.log("Deployed ProxyAdmin at:", address(admin));
-        //        console2.log("Deployed Proxy at:", address(proxy));
+        console2.log("All CLI deployment complete. Complete the rest on multisig");
+        bytes memory initData = abi.encodeWithSignature(
+            "initialize(address,address,address,address,address,uint256)",
+            address(tokenImpl),
+            uniswap,
+            positionMgr,
+            bondingCurve,
+            weth,
+            feePercent
+        );
+        bytes memory proxyData = abi.encodePacked(type(TransparentUpgradeableProxy).creationCode, abi.encode(tokenFactoryImpl, address(proxyAdmin), initData));
+        console2.log("1. [EXECUTE ON MULTISIG] [To: 0x0] [TransparentUpgradeableProxy deploy data] ", vm.toString(proxyData));
+        console2.log("2. [EXECUTE ON MULTISIG] [To: (Factory Deployment Address)] [Initializer data] ", vm.toString(initData));
+
+
+
     }
 }
