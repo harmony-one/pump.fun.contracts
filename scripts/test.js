@@ -72,6 +72,7 @@ async function deployTokenFactory() {
             bondingCurve.address,
             weth.address,
             100, // _feePercent
+            deployer.address
         ],
         { initializer: "initialize" }
     );

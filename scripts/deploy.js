@@ -46,6 +46,7 @@ async function main() {
             bondingCurve.address,
             weth.address,
             100, // _feePercent
+            deployer.address
         ],
         { initializer: "initialize" }
     );

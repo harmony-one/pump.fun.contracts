@@ -44,7 +44,8 @@ async function main() {
             bondingCurve.address,
             weth.address,
             100, // _feePercent
-            ethers.utils.parseEther("1")
+            ethers.utils.parseEther("1"),
+            owner.address
         ],
         { initializer: "initialize" }
     );
